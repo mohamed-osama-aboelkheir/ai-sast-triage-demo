@@ -15,7 +15,7 @@ the code, trace the data, decide with evidence and prove the control works.
 
 [![Watch on YouTube](https://img.shields.io/badge/▶_Watch_the_video-FF0000?style=for-the-badge&logo=youtube&logoColor=white)](https://youtu.be/z_A_UVAFx0M)
 
-📝 Blog post: BLOG_URL
+📝 Blog post: [Use AI to Get Smarter, Not Lazier](https://medium.com/appsec-untangled/use-ai-to-get-smarter-not-lazier-86226310d770) (Medium)
 
 </td>
 </tr>
