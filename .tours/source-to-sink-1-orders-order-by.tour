@@ -1,0 +1,160 @@
+{
+  "$schema": "https://aka.ms/codetour-schema",
+  "title": "Source to sink 1 · sort → ORDER BY ${orderBy}",
+  "description": "Follows every value that reaches `${orderBy}` in the ORDER BY clause of orderRepository.find (Semgrep node-postgres-sqli, src/repositories/orderRepository.js:8). userId and status are bound parameters ($1, $2) and are not traced.",
+  "nextTour": "Source to sink 2 · reports[reportId].table → FROM ${tableName}",
+  "steps": [
+    {
+      "title": "1 · ⚪ SOURCE: 'created_at' default",
+      "description": "**Source:** a string literal, used only when `filters.orderColumn` is falsy (no `sort` in the query, or `sort=`).\n\n**Value here:** `'created_at'` for `GET /orders` (derived from code, not run).\n\n**Next →** passed as the third argument of `find`, received as `orderBy` (step 7).",
+      "file": "src/services/orderService.js",
+      "pattern": "\\|\\| ('created_at')",
+      "selection": {
+        "start": {
+          "line": 4,
+          "character": 72
+        },
+        "end": {
+          "line": 4,
+          "character": 84
+        }
+      },
+      "commands": [
+        "workbench.action.keepEditor"
+      ]
+    },
+    {
+      "title": "2 · 🔴 SOURCE: req.query.sort",
+      "description": "**Source:** the `sort` query parameter of `GET /orders`. Express 5's default query parser gives a string, or an array when the key is repeated.\n\n**Value here:** `sort = 'total'` for `GET /orders?status=open&sort=total` (example from docs/flows/list-orders.flow.json, not run).\n\n**Who can send it:** any user with a valid API token (step 3); no role is required.\n\n**Next →** checked? only `status` is (step 4); `sort` is passed on as `orderColumn` (step 5).",
+      "file": "src/controllers/ordersController.js",
+      "pattern": "const \\{ status, (sort) \\} = req\\.query",
+      "selection": {
+        "start": {
+          "line": 6,
+          "character": 19
+        },
+        "end": {
+          "line": 6,
+          "character": 23
+        }
+      },
+      "commands": [
+        "workbench.action.keepEditor"
+      ]
+    },
+    {
+      "title": "3 · 🛡 Check on the path: requireAuth",
+      "description": "**Control:** `requireAuth` requires a Bearer token found in `users.api_token`. It decides **who** can send `sort` (every authenticated user: alice, bob, admin), not **what** it contains. There is no `requireRole` on this route.\n\n**Next →** the `status` allowlist (step 4).",
+      "file": "src/routes/orders.js",
+      "pattern": "router\\.get\\('/orders', (requireAuth)",
+      "selection": {
+        "start": {
+          "line": 5,
+          "character": 23
+        },
+        "end": {
+          "line": 5,
+          "character": 34
+        }
+      },
+      "commands": [
+        "workbench.action.keepEditor"
+      ]
+    },
+    {
+      "title": "4 · 🚫 Check on the path: status allowlist",
+      "description": "**Gap:** the only validation in the controller checks `status` against `['open', 'shipped', 'cancelled']`. Nothing checks `sort`: no allowlist of columns, no type check, no length limit.\n\n**Next →** `sort` is renamed `orderColumn` (step 5).",
+      "file": "src/controllers/ordersController.js",
+      "pattern": "(if \\(status && !ALLOWED_STATUSES\\.includes\\(status\\)\\))",
+      "selection": {
+        "start": {
+          "line": 7,
+          "character": 3
+        },
+        "end": {
+          "line": 7,
+          "character": 52
+        }
+      },
+      "commands": [
+        "workbench.action.keepEditor"
+      ]
+    },
+    {
+      "title": "5 · sort → orderColumn",
+      "description": "**Propagates:** `sort` is stored unchanged in `filters.orderColumn`.\n\n**Value here:** `filters.orderColumn = 'total'` (derived from code, not run).\n\n**Next →** read in `orderService.search` (step 6).",
+      "file": "src/controllers/ordersController.js",
+      "pattern": "orderColumn: (sort)",
+      "selection": {
+        "start": {
+          "line": 11,
+          "character": 67
+        },
+        "end": {
+          "line": 11,
+          "character": 71
+        }
+      },
+      "commands": [
+        "workbench.action.keepEditor"
+      ]
+    },
+    {
+      "title": "6 · orderColumn || 'created_at'",
+      "description": "**Propagates:** a truthy `orderColumn` is passed through unchanged; only an empty value is replaced by the default (step 1). This is the merge point of paths A and B.\n\n**Value here:** `'total'` (derived from code, not run).\n\n**Next →** received by `find` as `orderBy` (step 7).",
+      "file": "src/services/orderService.js",
+      "pattern": "(filters\\.orderColumn) \\|\\|",
+      "selection": {
+        "start": {
+          "line": 4,
+          "character": 49
+        },
+        "end": {
+          "line": 4,
+          "character": 68
+        }
+      },
+      "commands": [
+        "workbench.action.keepEditor"
+      ]
+    },
+    {
+      "title": "7 · orderColumn → orderBy",
+      "description": "**Propagates:** the third argument is named `orderBy` in the repository. `find` has one caller (`orderService.search`).\n\n**Value here:** `orderBy = 'total'`, or `'created_at'` from path B (derived from code, not run).\n\n**Next →** interpolated into the SQL text (step 8).",
+      "file": "src/repositories/orderRepository.js",
+      "pattern": "async function find\\(userId, status, (orderBy)\\)",
+      "selection": {
+        "start": {
+          "line": 6,
+          "character": 37
+        },
+        "end": {
+          "line": 6,
+          "character": 44
+        }
+      },
+      "commands": [
+        "workbench.action.keepEditor"
+      ]
+    },
+    {
+      "title": "8 · ⚠️ SINK: ORDER BY ${orderBy}",
+      "description": "**Sink:** `orderBy` is written into the SQL text of `pool.query` with a template literal. `$1` and `$2` bind `userId` and `status`; identifiers such as an ORDER BY column cannot be bound, so the text is used as-is.\n\n**Sink receives:** `... ORDER BY total` for `?sort=total`; `... ORDER BY created_at` with no `sort` (derived from code, not run).\n\n**Path summary:** A: `req.query.sort` (user, any logged-in user) → no check on `sort` → `ORDER BY` text. B: literal `'created_at'` → `ORDER BY` text.",
+      "file": "src/repositories/orderRepository.js",
+      "pattern": "ORDER BY (\\$\\{orderBy\\})",
+      "selection": {
+        "start": {
+          "line": 10,
+          "character": 15
+        },
+        "end": {
+          "line": 10,
+          "character": 25
+        }
+      },
+      "commands": [
+        "workbench.action.keepEditor"
+      ]
+    }
+  ]
+}

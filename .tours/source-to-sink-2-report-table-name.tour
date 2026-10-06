@@ -1,0 +1,179 @@
+{
+  "$schema": "https://aka.ms/codetour-schema",
+  "title": "Source to sink 2 · reports[reportId].table → FROM ${tableName}",
+  "description": "Follows every value that reaches `${tableName}` in reportRepository.summary (Semgrep node-postgres-sqli, src/repositories/reportRepository.js:8). The user's reportId only selects a config entry; the table name itself comes from src/config/reports.js.",
+  "nextTour": "Source to sink 3 · comment body → <%- comment.html %>",
+  "steps": [
+    {
+      "title": "1 · 🔴 SOURCE: req.params.reportId",
+      "description": "**Source:** the `:reportId` path segment of `GET /reports/:reportId` (URL-decoded by Express).\n\n**Value here:** `reportId = 'daily'` for `GET /reports/daily` (example from docs/flows/show-report.flow.json, not run).\n\n**Who can send it:** only users whose role is `admin` (step 2).\n\n**Next →** used as a key into the `reports` object (step 3).",
+      "file": "src/controllers/reportsController.js",
+      "pattern": "reports\\[(req\\.params\\.reportId)\\]",
+      "selection": {
+        "start": {
+          "line": 5,
+          "character": 30
+        },
+        "end": {
+          "line": 5,
+          "character": 49
+        }
+      },
+      "commands": [
+        "workbench.action.keepEditor"
+      ]
+    },
+    {
+      "title": "2 · 🛡 Check on the path: requireRole('admin')",
+      "description": "**Control:** `requireAuth` then `requireRole('admin')` run before the controller. A valid token whose user has role `user` gets `403 {\"error\":\"forbidden\"}`. This limits who can send `reportId`, not what it contains.\n\n**Next →** the lookup (step 3).",
+      "file": "src/routes/reports.js",
+      "pattern": "requireAuth, (requireRole\\('admin'\\))",
+      "selection": {
+        "start": {
+          "line": 6,
+          "character": 47
+        },
+        "end": {
+          "line": 6,
+          "character": 67
+        }
+      },
+      "commands": [
+        "workbench.action.keepEditor"
+      ]
+    },
+    {
+      "title": "3 · ✋ User input stops here",
+      "description": "**Stops:** `reportId` is only used to select an entry of the `reports` object. Its own text goes no further: nothing downstream reads `req.params.reportId` again.\n\n**Value here:** `reports['daily']` → `{ title: 'Orders in the last 24 hours', table: 'orders_daily_summary' }`.\n\nBecause `reports` is a plain object literal, inherited keys (`constructor`, `toString`, `__proto__`) also return a truthy value whose `.table` is `undefined` (derived from code, not run).\n\n**Next →** the value that continues is the config entry (step 4).",
+      "file": "src/controllers/reportsController.js",
+      "pattern": "(reports\\[req\\.params\\.reportId\\])",
+      "selection": {
+        "start": {
+          "line": 5,
+          "character": 22
+        },
+        "end": {
+          "line": 5,
+          "character": 50
+        }
+      },
+      "commands": [
+        "workbench.action.keepEditor"
+      ]
+    },
+    {
+      "title": "4 · 🔵 SOURCE: config/reports.js table names",
+      "description": "**Source:** two hard-coded table names (views defined in `db/init.sql`). Nothing in the codebase writes to this object at runtime; it changes only through a code change.\n\n**Possible values:** `'orders_daily_summary'`, `'orders_monthly_summary'`, or `undefined` for an inherited key (step 3).\n\n**Next →** the selected entry becomes `definition` (step 5).",
+      "file": "src/config/reports.js",
+      "pattern": "(daily: \\{[^\\n]*'orders_daily_summary' \\},\\n\\s*monthly: \\{[^\\n]*'orders_monthly_summary' \\})",
+      "selection": {
+        "start": {
+          "line": 2,
+          "character": 3
+        },
+        "end": {
+          "line": 3,
+          "character": 75
+        }
+      },
+      "commands": [
+        "workbench.action.keepEditor"
+      ]
+    },
+    {
+      "title": "5 · reports[reportId] → definition",
+      "description": "**Propagates:** the config entry is stored in `definition`.\n\n**Value here:** `definition.table = 'orders_daily_summary'` (derived from code, not run).\n\n**Next →** existence check (step 6), then `reportService.build(definition)` (step 7).",
+      "file": "src/controllers/reportsController.js",
+      "pattern": "const (definition) = reports",
+      "selection": {
+        "start": {
+          "line": 5,
+          "character": 9
+        },
+        "end": {
+          "line": 5,
+          "character": 19
+        }
+      },
+      "commands": [
+        "workbench.action.keepEditor"
+      ]
+    },
+    {
+      "title": "6 · 🛡 Check on the path: !definition → 404",
+      "description": "**Control:** a key that is not in the object returns `404 {\"error\":\"unknown report\"}`. Combined with the lookup, the table name can only be one of the two config strings, or `undefined` for an inherited key such as `constructor` (which passes this check). It is never request text.\n\n**Next →** `definition.table` is passed to the repository (step 7).",
+      "file": "src/controllers/reportsController.js",
+      "pattern": "(if \\(!definition\\) return res\\.status\\(404\\)[^\\n]*)",
+      "selection": {
+        "start": {
+          "line": 6,
+          "character": 3
+        },
+        "end": {
+          "line": 6,
+          "character": 77
+        }
+      },
+      "commands": [
+        "workbench.action.keepEditor"
+      ]
+    },
+    {
+      "title": "7 · definition.table → summary()",
+      "description": "**Propagates:** the service passes `definition.table` unchanged. `summary` has one caller (this line).\n\n**Value here:** `'orders_daily_summary'` (derived from code, not run).\n\n**Next →** received as `tableName` (step 8).",
+      "file": "src/services/reportService.js",
+      "pattern": "reportRepository\\.summary\\((definition\\.table)\\)",
+      "selection": {
+        "start": {
+          "line": 4,
+          "character": 50
+        },
+        "end": {
+          "line": 4,
+          "character": 66
+        }
+      },
+      "commands": [
+        "workbench.action.keepEditor"
+      ]
+    },
+    {
+      "title": "8 · definition.table → tableName",
+      "description": "**Propagates:** the parameter is named `tableName` in the repository.\n\n**Value here:** `tableName = 'orders_daily_summary'` (derived from code, not run).\n\n**Next →** interpolated into the SQL text (step 9).",
+      "file": "src/repositories/reportRepository.js",
+      "pattern": "async function summary\\((tableName)\\)",
+      "selection": {
+        "start": {
+          "line": 6,
+          "character": 24
+        },
+        "end": {
+          "line": 6,
+          "character": 33
+        }
+      },
+      "commands": [
+        "workbench.action.keepEditor"
+      ]
+    },
+    {
+      "title": "9 · ⚠️ SINK: FROM ${tableName}",
+      "description": "**Sink:** `tableName` is written into the SQL text with a template literal; the query has no bound parameters.\n\n**Sink receives:** `... FROM orders_daily_summary` for `/reports/daily`, `... FROM orders_monthly_summary` for `/reports/monthly`, `... FROM undefined` for an inherited key (Postgres error → 500) (derived from code, not run).\n\n**Path summary:** A: `req.params.reportId` (user, admin only) → used only as a key, stops. B: `config/reports.js` table names (developers only) → 404 check → `FROM` text.",
+      "file": "src/repositories/reportRepository.js",
+      "pattern": "FROM (\\$\\{tableName\\})",
+      "selection": {
+        "start": {
+          "line": 8,
+          "character": 78
+        },
+        "end": {
+          "line": 8,
+          "character": 90
+        }
+      },
+      "commands": [
+        "workbench.action.keepEditor"
+      ]
+    }
+  ]
+}

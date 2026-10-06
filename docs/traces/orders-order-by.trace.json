@@ -1,0 +1,145 @@
+{
+  "id": "orders-order-by",
+  "order": 1,
+  "next": "report-table-name",
+  "mode": "backward",
+  "title": "Source to sink 1 · sort → ORDER BY ${orderBy}",
+  "description": "Follows every value that reaches `${orderBy}` in the ORDER BY clause of orderRepository.find (Semgrep node-postgres-sqli, src/repositories/orderRepository.js:8). userId and status are bound parameters ($1, $2) and are not traced.",
+  "cards": [
+    {
+      "n": 1,
+      "role": "source",
+      "path": "B",
+      "origin": "constant",
+      "label": "literal default, used when sort is absent",
+      "title": "SOURCE: 'created_at' default",
+      "file": "src/services/orderService.js",
+      "pattern": "\\|\\| ('created_at')",
+      "code": "filters.orderColumn || **'created_at'**",
+      "description": [
+        "**Source:** a string literal, used only when `filters.orderColumn` is falsy (no `sort` in the query, or `sort=`).",
+        "",
+        "**Value here:** `'created_at'` for `GET /orders` (derived from code, not run).",
+        "",
+        "**Next →** passed as the third argument of `find`, received as `orderBy` (step 7)."
+      ]
+    },
+    {
+      "n": 2,
+      "role": "source",
+      "path": "A",
+      "origin": "user",
+      "label": "user input, any logged-in user",
+      "title": "SOURCE: req.query.sort",
+      "file": "src/controllers/ordersController.js",
+      "pattern": "const \\{ status, (sort) \\} = req\\.query",
+      "code": "const { status, **sort** } = req.query",
+      "description": [
+        "**Source:** the `sort` query parameter of `GET /orders`. Express 5's default query parser gives a string, or an array when the key is repeated.",
+        "",
+        "**Value here:** `sort = 'total'` for `GET /orders?status=open&sort=total` (example from docs/flows/list-orders.flow.json, not run).",
+        "",
+        "**Who can send it:** any user with a valid API token (step 3); no role is required.",
+        "",
+        "**Next →** checked? only `status` is (step 4); `sort` is passed on as `orderColumn` (step 5)."
+      ]
+    },
+    {
+      "n": 3,
+      "role": "control",
+      "attach": 2,
+      "label": "auth only: any valid token can send sort",
+      "title": "Check on the path: requireAuth",
+      "file": "src/routes/orders.js",
+      "pattern": "router\\.get\\('/orders', (requireAuth)",
+      "description": [
+        "**Control:** `requireAuth` requires a Bearer token found in `users.api_token`. It decides **who** can send `sort` (every authenticated user: alice, bob, admin), not **what** it contains. There is no `requireRole` on this route.",
+        "",
+        "**Next →** the `status` allowlist (step 4)."
+      ]
+    },
+    {
+      "n": 4,
+      "role": "gap",
+      "attach": 5,
+      "label": "allowlist covers status, not sort",
+      "title": "Check on the path: status allowlist",
+      "file": "src/controllers/ordersController.js",
+      "pattern": "(if \\(status && !ALLOWED_STATUSES\\.includes\\(status\\)\\))",
+      "description": [
+        "**Gap:** the only validation in the controller checks `status` against `['open', 'shipped', 'cancelled']`. Nothing checks `sort`: no allowlist of columns, no type check, no length limit.",
+        "",
+        "**Next →** `sort` is renamed `orderColumn` (step 5)."
+      ]
+    },
+    {
+      "n": 5,
+      "role": "hop",
+      "path": "A",
+      "edge": "sort → orderColumn",
+      "title": "sort → orderColumn",
+      "file": "src/controllers/ordersController.js",
+      "pattern": "orderColumn: (sort)",
+      "code": "orderService.search({ status, orderColumn: **sort** }, req.user)",
+      "description": [
+        "**Propagates:** `sort` is stored unchanged in `filters.orderColumn`.",
+        "",
+        "**Value here:** `filters.orderColumn = 'total'` (derived from code, not run).",
+        "",
+        "**Next →** read in `orderService.search` (step 6)."
+      ]
+    },
+    {
+      "n": 6,
+      "role": "hop",
+      "path": "A",
+      "edge": "filters.orderColumn",
+      "title": "orderColumn || 'created_at'",
+      "file": "src/services/orderService.js",
+      "pattern": "(filters\\.orderColumn) \\|\\|",
+      "code": "orderRepository.find(user.id, filters.status, **filters.orderColumn** || 'created_at')",
+      "description": [
+        "**Propagates:** a truthy `orderColumn` is passed through unchanged; only an empty value is replaced by the default (step 1). This is the merge point of paths A and B.",
+        "",
+        "**Value here:** `'total'` (derived from code, not run).",
+        "",
+        "**Next →** received by `find` as `orderBy` (step 7)."
+      ]
+    },
+    {
+      "n": 7,
+      "role": "hop",
+      "path": "A",
+      "edge": "orderColumn → orderBy",
+      "title": "orderColumn → orderBy",
+      "file": "src/repositories/orderRepository.js",
+      "pattern": "async function find\\(userId, status, (orderBy)\\)",
+      "code": "async function find(userId, status, **orderBy**)",
+      "description": [
+        "**Propagates:** the third argument is named `orderBy` in the repository. `find` has one caller (`orderService.search`).",
+        "",
+        "**Value here:** `orderBy = 'total'`, or `'created_at'` from path B (derived from code, not run).",
+        "",
+        "**Next →** interpolated into the SQL text (step 8)."
+      ]
+    },
+    {
+      "n": 8,
+      "role": "sink",
+      "path": ["A", "B"],
+      "edge": "orderBy",
+      "label": "SQL text (ORDER BY)",
+      "title": "SINK: ORDER BY ${orderBy}",
+      "file": "src/repositories/orderRepository.js",
+      "pattern": "ORDER BY (\\$\\{orderBy\\})",
+      "code": "ORDER BY **${orderBy}**",
+      "description": [
+        "**Sink:** `orderBy` is written into the SQL text of `pool.query` with a template literal. `$1` and `$2` bind `userId` and `status`; identifiers such as an ORDER BY column cannot be bound, so the text is used as-is.",
+        "",
+        "**Sink receives:** `... ORDER BY total` for `?sort=total`; `... ORDER BY created_at` with no `sort` (derived from code, not run).",
+        "",
+        "**Path summary:** A: `req.query.sort` (user, any logged-in user) → no check on `sort` → `ORDER BY` text. B: literal `'created_at'` → `ORDER BY` text."
+      ]
+    }
+  ]
+}

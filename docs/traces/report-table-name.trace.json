@@ -1,0 +1,165 @@
+{
+  "id": "report-table-name",
+  "order": 2,
+  "next": "comment-html",
+  "mode": "backward",
+  "title": "Source to sink 2 · reports[reportId].table → FROM ${tableName}",
+  "description": "Follows every value that reaches `${tableName}` in reportRepository.summary (Semgrep node-postgres-sqli, src/repositories/reportRepository.js:8). The user's reportId only selects a config entry; the table name itself comes from src/config/reports.js.",
+  "cards": [
+    {
+      "n": 1,
+      "role": "source",
+      "path": "A",
+      "origin": "user",
+      "label": "user input, admin only",
+      "title": "SOURCE: req.params.reportId",
+      "file": "src/controllers/reportsController.js",
+      "pattern": "reports\\[(req\\.params\\.reportId)\\]",
+      "code": "const definition = reports[**req.params.reportId**]",
+      "description": [
+        "**Source:** the `:reportId` path segment of `GET /reports/:reportId` (URL-decoded by Express).",
+        "",
+        "**Value here:** `reportId = 'daily'` for `GET /reports/daily` (example from docs/flows/show-report.flow.json, not run).",
+        "",
+        "**Who can send it:** only users whose role is `admin` (step 2).",
+        "",
+        "**Next →** used as a key into the `reports` object (step 3)."
+      ]
+    },
+    {
+      "n": 2,
+      "role": "control",
+      "attach": 1,
+      "label": "only role admin can send reportId",
+      "title": "Check on the path: requireRole('admin')",
+      "file": "src/routes/reports.js",
+      "pattern": "requireAuth, (requireRole\\('admin'\\))",
+      "description": [
+        "**Control:** `requireAuth` then `requireRole('admin')` run before the controller. A valid token whose user has role `user` gets `403 {\"error\":\"forbidden\"}`. This limits who can send `reportId`, not what it contains.",
+        "",
+        "**Next →** the lookup (step 3)."
+      ]
+    },
+    {
+      "n": 3,
+      "role": "stop",
+      "path": "A",
+      "edge": "reportId",
+      "label": "used only as an object key",
+      "title": "User input stops here",
+      "file": "src/controllers/reportsController.js",
+      "pattern": "(reports\\[req\\.params\\.reportId\\])",
+      "code": "const definition = **reports[req.params.reportId]**",
+      "description": [
+        "**Stops:** `reportId` is only used to select an entry of the `reports` object. Its own text goes no further: nothing downstream reads `req.params.reportId` again.",
+        "",
+        "**Value here:** `reports['daily']` → `{ title: 'Orders in the last 24 hours', table: 'orders_daily_summary' }`.",
+        "",
+        "Because `reports` is a plain object literal, inherited keys (`constructor`, `toString`, `__proto__`) also return a truthy value whose `.table` is `undefined` (derived from code, not run).",
+        "",
+        "**Next →** the value that continues is the config entry (step 4)."
+      ]
+    },
+    {
+      "n": 4,
+      "role": "source",
+      "path": "B",
+      "origin": "config",
+      "label": "source-code config, changed only by developers",
+      "title": "SOURCE: config/reports.js table names",
+      "file": "src/config/reports.js",
+      "pattern": "(daily: \\{[^\\n]*'orders_daily_summary' \\},\\n\\s*monthly: \\{[^\\n]*'orders_monthly_summary' \\})",
+      "code": "daily: { ..., table: '**orders_daily_summary**' }, monthly: { ..., table: '**orders_monthly_summary**' }",
+      "description": [
+        "**Source:** two hard-coded table names (views defined in `db/init.sql`). Nothing in the codebase writes to this object at runtime; it changes only through a code change.",
+        "",
+        "**Possible values:** `'orders_daily_summary'`, `'orders_monthly_summary'`, or `undefined` for an inherited key (step 3).",
+        "",
+        "**Next →** the selected entry becomes `definition` (step 5)."
+      ]
+    },
+    {
+      "n": 5,
+      "role": "hop",
+      "path": "B",
+      "edge": "reports[reportId] → definition",
+      "title": "reports[reportId] → definition",
+      "file": "src/controllers/reportsController.js",
+      "pattern": "const (definition) = reports",
+      "code": "const **definition** = reports[req.params.reportId]",
+      "description": [
+        "**Propagates:** the config entry is stored in `definition`.",
+        "",
+        "**Value here:** `definition.table = 'orders_daily_summary'` (derived from code, not run).",
+        "",
+        "**Next →** existence check (step 6), then `reportService.build(definition)` (step 7)."
+      ]
+    },
+    {
+      "n": 6,
+      "role": "control",
+      "attach": 7,
+      "label": "unknown key → 404; inherited keys pass with table undefined",
+      "title": "Check on the path: !definition → 404",
+      "file": "src/controllers/reportsController.js",
+      "pattern": "(if \\(!definition\\) return res\\.status\\(404\\)[^\\n]*)",
+      "description": [
+        "**Control:** a key that is not in the object returns `404 {\"error\":\"unknown report\"}`. Combined with the lookup, the table name can only be one of the two config strings, or `undefined` for an inherited key such as `constructor` (which passes this check). It is never request text.",
+        "",
+        "**Next →** `definition.table` is passed to the repository (step 7)."
+      ]
+    },
+    {
+      "n": 7,
+      "role": "hop",
+      "path": "B",
+      "edge": "definition.table",
+      "title": "definition.table → summary()",
+      "file": "src/services/reportService.js",
+      "pattern": "reportRepository\\.summary\\((definition\\.table)\\)",
+      "code": "const summary = await reportRepository.summary(**definition.table**)",
+      "description": [
+        "**Propagates:** the service passes `definition.table` unchanged. `summary` has one caller (this line).",
+        "",
+        "**Value here:** `'orders_daily_summary'` (derived from code, not run).",
+        "",
+        "**Next →** received as `tableName` (step 8)."
+      ]
+    },
+    {
+      "n": 8,
+      "role": "hop",
+      "path": "B",
+      "edge": "definition.table → tableName",
+      "title": "definition.table → tableName",
+      "file": "src/repositories/reportRepository.js",
+      "pattern": "async function summary\\((tableName)\\)",
+      "code": "async function summary(**tableName**)",
+      "description": [
+        "**Propagates:** the parameter is named `tableName` in the repository.",
+        "",
+        "**Value here:** `tableName = 'orders_daily_summary'` (derived from code, not run).",
+        "",
+        "**Next →** interpolated into the SQL text (step 9)."
+      ]
+    },
+    {
+      "n": 9,
+      "role": "sink",
+      "path": "B",
+      "edge": "tableName",
+      "label": "SQL text (FROM)",
+      "title": "SINK: FROM ${tableName}",
+      "file": "src/repositories/reportRepository.js",
+      "pattern": "FROM (\\$\\{tableName\\})",
+      "code": "SELECT count(*)::int AS orders, ... FROM **${tableName}**",
+      "description": [
+        "**Sink:** `tableName` is written into the SQL text with a template literal; the query has no bound parameters.",
+        "",
+        "**Sink receives:** `... FROM orders_daily_summary` for `/reports/daily`, `... FROM orders_monthly_summary` for `/reports/monthly`, `... FROM undefined` for an inherited key (Postgres error → 500) (derived from code, not run).",
+        "",
+        "**Path summary:** A: `req.params.reportId` (user, admin only) → used only as a key, stops. B: `config/reports.js` table names (developers only) → 404 check → `FROM` text."
+      ]
+    }
+  ]
+}

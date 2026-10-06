@@ -1,0 +1,198 @@
+{
+  "id": "comment-html",
+  "order": 3,
+  "mode": "backward",
+  "title": "Source to sink 3 · comment body → <%- comment.html %>",
+  "description": "Follows the value printed raw by `<%- comment.html %>` in src/views/comments.ejs:18 (Semgrep template-explicit-unescape) back through the comments table to the POST /comments body that writes it.",
+  "cards": [
+    {
+      "n": 1,
+      "role": "source",
+      "path": "A",
+      "origin": "user",
+      "label": "user input, any logged-in user; shown to every visitor (anonymous)",
+      "title": "SOURCE: req.body.body",
+      "file": "src/controllers/commentsController.js",
+      "pattern": "const body = \\((req\\.body\\.body) \\|\\| ''\\)",
+      "code": "const body = (**req.body.body** || '').trim()",
+      "description": [
+        "**Source:** the `body` field of the JSON (or urlencoded) body of `POST /comments`. It is stored and later rendered for every visitor of `GET /comments`, which has no authentication: a second-order (stored) input.",
+        "",
+        "**Value here:** `'Delivery was **fast**, thanks!'` (derived from code and db/init.sql, not run).",
+        "",
+        "**Who can send it:** any user with a valid API token (step 2). **Who receives it:** anyone, including anonymous visitors.",
+        "",
+        "**Next →** the empty check (step 3), then `commentService.add` (step 4)."
+      ]
+    },
+    {
+      "n": 2,
+      "role": "control",
+      "attach": 1,
+      "label": "auth only: any valid token can write a comment",
+      "title": "Check on the path: requireAuth on POST",
+      "file": "src/routes/comments.js",
+      "pattern": "router\\.post\\('/comments', (requireAuth)",
+      "description": [
+        "**Control:** `requireAuth` decides who can write comments (alice, bob, admin). It doesn't look at the content. `GET /comments` (line 5) has no middleware, so the rendered result is public.",
+        "",
+        "**Next →** the empty check (step 3)."
+      ]
+    },
+    {
+      "n": 3,
+      "role": "gap",
+      "attach": 4,
+      "label": "rejects empty only; no HTML check on input",
+      "title": "Check on the path: empty comment",
+      "file": "src/controllers/commentsController.js",
+      "pattern": "(if \\(!body\\))",
+      "description": [
+        "**Gap:** the only input check rejects an empty string (`400 {\"error\":\"empty comment\"}`). Markup is stored as written; sanitising happens on output (step 9), which is the order the wiki recommends.",
+        "",
+        "**Next →** `commentService.add(req.user, body)` (step 4)."
+      ]
+    },
+    {
+      "n": 4,
+      "role": "hop",
+      "path": "A",
+      "edge": "body",
+      "title": "body → commentRepository.create",
+      "file": "src/services/commentService.js",
+      "pattern": "commentRepository\\.create\\(user\\.id, (body)\\)",
+      "code": "commentRepository.create(user.id, **body**)",
+      "description": [
+        "**Propagates:** the service passes the trimmed body unchanged, with the author's id from `req.user`.",
+        "",
+        "**Next →** inserted into `comments.body` (step 5)."
+      ]
+    },
+    {
+      "n": 5,
+      "role": "hop",
+      "path": "A",
+      "edge": "body → comments.body",
+      "title": "Stored in comments.body",
+      "file": "src/repositories/commentRepository.js",
+      "pattern": "VALUES \\(\\$1, \\$2\\)', \\[userId, (body)\\]",
+      "code": "INSERT INTO comments (user_id, body) VALUES ($1, $2)', [userId, **body**]",
+      "description": [
+        "**Propagates:** stored as-is in `comments.body` with a parameterised INSERT. `db/init.sql:39-42` seeds three more rows, one of them containing an `<img>` with an inline event handler (seeded comment 2).",
+        "",
+        "**Next →** read back for every visitor (step 6)."
+      ]
+    },
+    {
+      "n": 6,
+      "role": "hop",
+      "path": "A",
+      "edge": "comments.body (read back)",
+      "title": "Read back for every visitor",
+      "file": "src/repositories/commentRepository.js",
+      "pattern": "SELECT c\\.id, (c\\.body)",
+      "code": "SELECT c.id, **c.body**, c.created_at, u.username FROM comments c JOIN users u ...",
+      "description": [
+        "**Propagates:** `list()` reads every comment, newest first, for `GET /comments`. Nothing else writes `comments.body` (`grep -rn \"comments\" src` finds only these two queries).",
+        "",
+        "**Next →** rendered as Markdown by the service (step 7)."
+      ]
+    },
+    {
+      "n": 7,
+      "role": "hop",
+      "path": "A",
+      "edge": "comment.body → text",
+      "title": "comment.body → markdown.render(text)",
+      "file": "src/services/commentService.js",
+      "pattern": "markdown\\.render\\((comment\\.body)\\)",
+      "code": "html: markdown.render(**comment.body**)",
+      "description": [
+        "**Propagates:** each row's body is passed to `markdown.render`, received as `text`.",
+        "",
+        "**Next →** `marked.parse(text)` (step 8)."
+      ]
+    },
+    {
+      "n": 8,
+      "role": "hop",
+      "path": "A",
+      "edge": "text",
+      "title": "Markdown → HTML (marked)",
+      "file": "src/utils/markdown.js",
+      "pattern": "marked\\.parse\\((text)\\)",
+      "code": "DOMPurify.sanitize(marked.parse(**text**))",
+      "description": [
+        "**Propagates:** `marked` (16.4.2) turns Markdown into HTML. It does not escape or remove raw HTML in the input, so any markup the author typed is still present after this step.",
+        "",
+        "**Value here:** `'<p>Delivery was <strong>fast</strong>, thanks! …</p>'` (observed locally, see the report).",
+        "",
+        "**Next →** sanitised by DOMPurify (step 9)."
+      ]
+    },
+    {
+      "n": 9,
+      "role": "control",
+      "attach": 10,
+      "label": "covers it: DOMPurify allowlist, last step before output",
+      "title": "Check on the path: DOMPurify.sanitize",
+      "file": "src/utils/markdown.js",
+      "pattern": "(DOMPurify\\.sanitize)\\(",
+      "description": [
+        "**Control:** `isomorphic-dompurify` 2.36.0 (DOMPurify 3.4.16 on jsdom), default configuration. It removes `<script>`, event-handler attributes and `javascript:` URLs, and it runs on the HTML **after** `marked`, on every render. Nothing modifies the string after it.",
+        "",
+        "**Observed (local, 2026-10-06):** the seeded `<img>` comes out as `<img src=\"x\">`, with the event handler removed.",
+        "",
+        "**Next →** the sanitised string becomes `comment.html` (step 10)."
+      ]
+    },
+    {
+      "n": 10,
+      "role": "hop",
+      "path": "A",
+      "edge": "sanitised HTML → html",
+      "title": "Sanitised HTML → comment.html",
+      "file": "src/services/commentService.js",
+      "pattern": "(html): markdown\\.render",
+      "code": "**html**: markdown.render(comment.body)",
+      "description": [
+        "**Propagates:** the view model has `author`, `createdAt` and `html`; the raw `body` is not passed to the view.",
+        "",
+        "**Next →** `res.render('comments', { comments })` (step 11)."
+      ]
+    },
+    {
+      "n": 11,
+      "role": "hop",
+      "path": "A",
+      "edge": "comments[].html",
+      "title": "res.render('comments', { comments })",
+      "file": "src/controllers/commentsController.js",
+      "pattern": "res\\.render\\('comments', \\{ (comments) \\}\\)",
+      "code": "res.render('comments', { **comments** })",
+      "description": [
+        "**Propagates:** the list is passed to the EJS template unchanged.",
+        "",
+        "**Next →** printed raw in the template (step 12)."
+      ]
+    },
+    {
+      "n": 12,
+      "role": "sink",
+      "path": "A",
+      "edge": "comment.html",
+      "label": "raw HTML output",
+      "title": "SINK: <%- comment.html %>",
+      "file": "src/views/comments.ejs",
+      "pattern": "<%- (comment\\.html) %>",
+      "code": "<div><%- **comment.html** %></div>",
+      "description": [
+        "**Sink:** `<%-` writes the string without escaping, inside a `<div>` (HTML body context). `comment.author` and the date on line 17 use `<%=` and are escaped.",
+        "",
+        "**Sink receives:** `<p>Delivery was <strong>fast</strong>, thanks! Tracking: <a href=\"https://example.com/track\">carrier site</a></p>` for seeded comment 1 (observed through `markdown.render`, not through the page).",
+        "",
+        "**Path summary:** `req.body.body` (user, any logged-in user; read by anonymous visitors) → stored → `marked` → 🛡 DOMPurify (last) → raw HTML output."
+      ]
+    }
+  ]
+}

@@ -1,0 +1,235 @@
+{
+  "$schema": "https://aka.ms/codetour-schema",
+  "title": "Source to sink 3 · comment body → <%- comment.html %>",
+  "description": "Follows the value printed raw by `<%- comment.html %>` in src/views/comments.ejs:18 (Semgrep template-explicit-unescape) back through the comments table to the POST /comments body that writes it.",
+  "steps": [
+    {
+      "title": "1 · 🔴 SOURCE: req.body.body",
+      "description": "**Source:** the `body` field of the JSON (or urlencoded) body of `POST /comments`. It is stored and later rendered for every visitor of `GET /comments`, which has no authentication: a second-order (stored) input.\n\n**Value here:** `'Delivery was **fast**, thanks!'` (derived from code and db/init.sql, not run).\n\n**Who can send it:** any user with a valid API token (step 2). **Who receives it:** anyone, including anonymous visitors.\n\n**Next →** the empty check (step 3), then `commentService.add` (step 4).",
+      "file": "src/controllers/commentsController.js",
+      "pattern": "const body = \\((req\\.body\\.body) \\|\\| ''\\)",
+      "selection": {
+        "start": {
+          "line": 9,
+          "character": 17
+        },
+        "end": {
+          "line": 9,
+          "character": 30
+        }
+      },
+      "commands": [
+        "workbench.action.keepEditor"
+      ]
+    },
+    {
+      "title": "2 · 🛡 Check on the path: requireAuth on POST",
+      "description": "**Control:** `requireAuth` decides who can write comments (alice, bob, admin). It doesn't look at the content. `GET /comments` (line 5) has no middleware, so the rendered result is public.\n\n**Next →** the empty check (step 3).",
+      "file": "src/routes/comments.js",
+      "pattern": "router\\.post\\('/comments', (requireAuth)",
+      "selection": {
+        "start": {
+          "line": 6,
+          "character": 26
+        },
+        "end": {
+          "line": 6,
+          "character": 37
+        }
+      },
+      "commands": [
+        "workbench.action.keepEditor"
+      ]
+    },
+    {
+      "title": "3 · 🚫 Check on the path: empty comment",
+      "description": "**Gap:** the only input check rejects an empty string (`400 {\"error\":\"empty comment\"}`). Markup is stored as written; sanitising happens on output (step 9), which is the order the wiki recommends.\n\n**Next →** `commentService.add(req.user, body)` (step 4).",
+      "file": "src/controllers/commentsController.js",
+      "pattern": "(if \\(!body\\))",
+      "selection": {
+        "start": {
+          "line": 10,
+          "character": 3
+        },
+        "end": {
+          "line": 10,
+          "character": 13
+        }
+      },
+      "commands": [
+        "workbench.action.keepEditor"
+      ]
+    },
+    {
+      "title": "4 · body → commentRepository.create",
+      "description": "**Propagates:** the service passes the trimmed body unchanged, with the author's id from `req.user`.\n\n**Next →** inserted into `comments.body` (step 5).",
+      "file": "src/services/commentService.js",
+      "pattern": "commentRepository\\.create\\(user\\.id, (body)\\)",
+      "selection": {
+        "start": {
+          "line": 13,
+          "character": 65
+        },
+        "end": {
+          "line": 13,
+          "character": 69
+        }
+      },
+      "commands": [
+        "workbench.action.keepEditor"
+      ]
+    },
+    {
+      "title": "5 · Stored in comments.body",
+      "description": "**Propagates:** stored as-is in `comments.body` with a parameterised INSERT. `db/init.sql:39-42` seeds three more rows, one of them containing an `<img>` with an inline event handler (seeded comment 2).\n\n**Next →** read back for every visitor (step 6).",
+      "file": "src/repositories/commentRepository.js",
+      "pattern": "VALUES \\(\\$1, \\$2\\)', \\[userId, (body)\\]",
+      "selection": {
+        "start": {
+          "line": 16,
+          "character": 85
+        },
+        "end": {
+          "line": 16,
+          "character": 89
+        }
+      },
+      "commands": [
+        "workbench.action.keepEditor"
+      ]
+    },
+    {
+      "title": "6 · Read back for every visitor",
+      "description": "**Propagates:** `list()` reads every comment, newest first, for `GET /comments`. Nothing else writes `comments.body` (`grep -rn \"comments\" src` finds only these two queries).\n\n**Next →** rendered as Markdown by the service (step 7).",
+      "file": "src/repositories/commentRepository.js",
+      "pattern": "SELECT c\\.id, (c\\.body)",
+      "selection": {
+        "start": {
+          "line": 8,
+          "character": 19
+        },
+        "end": {
+          "line": 8,
+          "character": 25
+        }
+      },
+      "commands": [
+        "workbench.action.keepEditor"
+      ]
+    },
+    {
+      "title": "7 · comment.body → markdown.render(text)",
+      "description": "**Propagates:** each row's body is passed to `markdown.render`, received as `text`.\n\n**Next →** `marked.parse(text)` (step 8).",
+      "file": "src/services/commentService.js",
+      "pattern": "markdown\\.render\\((comment\\.body)\\)",
+      "selection": {
+        "start": {
+          "line": 9,
+          "character": 27
+        },
+        "end": {
+          "line": 9,
+          "character": 39
+        }
+      },
+      "commands": [
+        "workbench.action.keepEditor"
+      ]
+    },
+    {
+      "title": "8 · Markdown → HTML (marked)",
+      "description": "**Propagates:** `marked` (16.4.2) turns Markdown into HTML. It does not escape or remove raw HTML in the input, so any markup the author typed is still present after this step.\n\n**Value here:** `'<p>Delivery was <strong>fast</strong>, thanks! …</p>'` (observed locally, see the report).\n\n**Next →** sanitised by DOMPurify (step 9).",
+      "file": "src/utils/markdown.js",
+      "pattern": "marked\\.parse\\((text)\\)",
+      "selection": {
+        "start": {
+          "line": 4,
+          "character": 60
+        },
+        "end": {
+          "line": 4,
+          "character": 64
+        }
+      },
+      "commands": [
+        "workbench.action.keepEditor"
+      ]
+    },
+    {
+      "title": "9 · 🛡 Check on the path: DOMPurify.sanitize",
+      "description": "**Control:** `isomorphic-dompurify` 2.36.0 (DOMPurify 3.4.16 on jsdom), default configuration. It removes `<script>`, event-handler attributes and `javascript:` URLs, and it runs on the HTML **after** `marked`, on every render. Nothing modifies the string after it.\n\n**Observed (local, 2026-10-06):** the seeded `<img>` comes out as `<img src=\"x\">`, with the event handler removed.\n\n**Next →** the sanitised string becomes `comment.html` (step 10).",
+      "file": "src/utils/markdown.js",
+      "pattern": "(DOMPurify\\.sanitize)\\(",
+      "selection": {
+        "start": {
+          "line": 4,
+          "character": 28
+        },
+        "end": {
+          "line": 4,
+          "character": 46
+        }
+      },
+      "commands": [
+        "workbench.action.keepEditor"
+      ]
+    },
+    {
+      "title": "10 · Sanitised HTML → comment.html",
+      "description": "**Propagates:** the view model has `author`, `createdAt` and `html`; the raw `body` is not passed to the view.\n\n**Next →** `res.render('comments', { comments })` (step 11).",
+      "file": "src/services/commentService.js",
+      "pattern": "(html): markdown\\.render",
+      "selection": {
+        "start": {
+          "line": 9,
+          "character": 5
+        },
+        "end": {
+          "line": 9,
+          "character": 9
+        }
+      },
+      "commands": [
+        "workbench.action.keepEditor"
+      ]
+    },
+    {
+      "title": "11 · res.render('comments', { comments })",
+      "description": "**Propagates:** the list is passed to the EJS template unchanged.\n\n**Next →** printed raw in the template (step 12).",
+      "file": "src/controllers/commentsController.js",
+      "pattern": "res\\.render\\('comments', \\{ (comments) \\}\\)",
+      "selection": {
+        "start": {
+          "line": 5,
+          "character": 28
+        },
+        "end": {
+          "line": 5,
+          "character": 36
+        }
+      },
+      "commands": [
+        "workbench.action.keepEditor"
+      ]
+    },
+    {
+      "title": "12 · ⚠️ SINK: <%- comment.html %>",
+      "description": "**Sink:** `<%-` writes the string without escaping, inside a `<div>` (HTML body context). `comment.author` and the date on line 17 use `<%=` and are escaped.\n\n**Sink receives:** `<p>Delivery was <strong>fast</strong>, thanks! Tracking: <a href=\"https://example.com/track\">carrier site</a></p>` for seeded comment 1 (observed through `markdown.render`, not through the page).\n\n**Path summary:** `req.body.body` (user, any logged-in user; read by anonymous visitors) → stored → `marked` → 🛡 DOMPurify (last) → raw HTML output.",
+      "file": "src/views/comments.ejs",
+      "pattern": "<%- (comment\\.html) %>",
+      "selection": {
+        "start": {
+          "line": 18,
+          "character": 16
+        },
+        "end": {
+          "line": 18,
+          "character": 28
+        }
+      },
+      "commands": [
+        "workbench.action.keepEditor"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,281 @@
+{
+  "$schema": "https://aka.ms/codetour-schema",
+  "title": "Revenue report (GET /reports/:reportId)",
+  "description": "How an admin fetches a revenue summary (`daily` or `monthly`), from the request through the config lookup to the SELECT ... FROM ${tableName} statement flagged by Semgrep (src/repositories/reportRepository.js:8).",
+  "steps": [
+    {
+      "title": "1 · Client: HTTP request",
+      "description": "**What happens:** an admin asks for a named report. The only input is the path segment `reportId`.\n\n```http\nGET /reports/daily HTTP/1.1\nHost: localhost:3000\nAuthorization: Bearer tok_admin_c41f6e\n```\n\n| Case | Status | Body | Source |\n|---|---|---|---|\n| No `Authorization` header, or not `Bearer …` | 401 | `{\"error\":\"missing token\"}` | captured |\n| Token not in `users.api_token` | 401 | `{\"error\":\"invalid token\"}` | derived from code, not run |\n| Valid token, role is not `admin` (alice, bob) | 403 | `{\"error\":\"forbidden\"}` | derived from code, not run |\n| `reportId` not a key of `config/reports.js` | 404 | `{\"error\":\"unknown report\"}` | derived from code, not run |\n| `reportId` is an inherited object key (`constructor`, `toString`) | 500 | `{\"error\":\"internal error\"}` | derived from code, not run |\n| Success | 200 | `{\"title\":…,\"orders\":n,\"revenue\":\"…\"}` | derived from code, not run |\n\n**Next →** Express matches the path against the mounted routers (step 2)."
+    },
+    {
+      "title": "2 · App: mount reports router",
+      "description": "**What happens:** after the body parsers and the orders router, the reports router is mounted at the root.\n\n**Next →** `router.get('/reports/:reportId', ...)` (step 3).",
+      "file": "src/app.js",
+      "pattern": "app\\.use\\((require\\('\\./routes/reports'\\))\\)",
+      "selection": {
+        "start": {
+          "line": 12,
+          "character": 9
+        },
+        "end": {
+          "line": 12,
+          "character": 36
+        }
+      },
+      "commands": [
+        "workbench.action.keepEditor"
+      ]
+    },
+    {
+      "title": "3 · Routing: GET /reports/:reportId",
+      "description": "**What happens:** two middlewares run before the controller: authentication, then a role check for `admin`. `:reportId` captures one path segment (URL-decoded) into `req.params.reportId`.\n\n```js\nreq.params  // GET /reports/daily → { reportId: 'daily' }\n```\n\n**Next →** `requireAuth(req, res, next)` (step 4).",
+      "file": "src/routes/reports.js",
+      "pattern": "(router\\.get\\('/reports/:reportId', requireAuth, requireRole\\('admin'\\), reportsController\\.show\\))",
+      "selection": {
+        "start": {
+          "line": 6,
+          "character": 1
+        },
+        "end": {
+          "line": 6,
+          "character": 92
+        }
+      },
+      "commands": [
+        "workbench.action.keepEditor"
+      ]
+    },
+    {
+      "title": "4 · 🔒 Auth: read Bearer token",
+      "description": "**What happens:** same middleware as the orders flow. A missing header or another scheme stops the request (captured from the running app):\n\n```http\nHTTP/1.1 401 Unauthorized\n\n{\"error\":\"missing token\"}\n```\n\n**Next →** `userService.authenticate(token)` (step 5).",
+      "file": "src/middleware/requireAuth.js",
+      "pattern": "(const token = header\\.startsWith\\('Bearer '\\)[^\\n]*)",
+      "selection": {
+        "start": {
+          "line": 5,
+          "character": 3
+        },
+        "end": {
+          "line": 5,
+          "character": 86
+        }
+      },
+      "commands": [
+        "workbench.action.keepEditor"
+      ]
+    },
+    {
+      "title": "5 · 🔒 Auth: authenticate token",
+      "description": "**What happens:** an unknown token stops the request; otherwise `req.user` is set.\n\n```http\nHTTP/1.1 401 Unauthorized\n\n{\"error\":\"invalid token\"}\n```\n(derived from code, not run)\n\n**Next →** `findByToken(token)` (step 6).",
+      "file": "src/middleware/requireAuth.js",
+      "pattern": "(const user = await userService\\.authenticate\\(token\\);\\n\\s*if \\(!user\\)[^\\n]*)",
+      "selection": {
+        "start": {
+          "line": 8,
+          "character": 3
+        },
+        "end": {
+          "line": 9,
+          "character": 70
+        }
+      },
+      "commands": [
+        "workbench.action.keepEditor"
+      ]
+    },
+    {
+      "title": "6 · 🔒 Auth store: token lookup",
+      "description": "**What happens:** parameterised lookup of the token; returns the user's `role`, used by the next step.\n\n```js\nreq.user = { id: 3, username: 'admin', role: 'admin' }   // for tok_admin_c41f6e\n```\n\n**Next →** `requireRole('admin')(req, res, next)` (step 7).",
+      "file": "src/repositories/userRepository.js",
+      "pattern": "('SELECT id, username, role FROM users WHERE api_token = \\$1', \\[token\\])",
+      "selection": {
+        "start": {
+          "line": 7,
+          "character": 37
+        },
+        "end": {
+          "line": 7,
+          "character": 105
+        }
+      },
+      "commands": [
+        "workbench.action.keepEditor"
+      ]
+    },
+    {
+      "title": "7 · 🔒 Authz: require admin role",
+      "description": "**What happens:** only users whose `role` column is `admin` continue. alice and bob (role `user`) are stopped:\n\n```http\nHTTP/1.1 403 Forbidden\n\n{\"error\":\"forbidden\"}\n```\n(derived from code, not run)\n\n**Next →** `next()` → `reportsController.show(req, res)` (step 8).",
+      "file": "src/middleware/requireRole.js",
+      "pattern": "(if \\(!req\\.user \\|\\| req\\.user\\.role !== role\\)[^\\n]*)",
+      "selection": {
+        "start": {
+          "line": 2,
+          "character": 3
+        },
+        "end": {
+          "line": 2,
+          "character": 96
+        }
+      },
+      "commands": [
+        "workbench.action.keepEditor"
+      ]
+    },
+    {
+      "title": "8 · 🎯 Controller: look up reportId",
+      "description": "**What happens:** the path value is used only as a key into the report definitions in `config/reports.js`; the client never sends a table name.\n\n```js\ndefinition = reports['daily']\n// → { title: 'Orders in the last 24 hours', table: 'orders_daily_summary' }\n```\n\n**Next →** the definitions object (step 9).",
+      "file": "src/controllers/reportsController.js",
+      "pattern": "(reports\\[req\\.params\\.reportId\\])",
+      "selection": {
+        "start": {
+          "line": 5,
+          "character": 22
+        },
+        "end": {
+          "line": 5,
+          "character": 50
+        }
+      },
+      "commands": [
+        "workbench.action.keepEditor"
+      ]
+    },
+    {
+      "title": "9 · 🔒 Config: report definitions",
+      "description": "**What happens:** a hard-coded map of two reports, each with a fixed `table` (a view defined in `db/init.sql`). These two strings are the only table names defined here.\n\n**Security:** the map is a plain object literal, so inherited keys (`constructor`, `toString`, `__proto__`) are also found by the lookup in step 8; their `.table` is `undefined`.\n\n**Next →** the `!definition` check (step 10).",
+      "file": "src/config/reports.js",
+      "pattern": "(daily: \\{[^\\n]*\\n\\s*monthly: \\{[^\\n]*)",
+      "selection": {
+        "start": {
+          "line": 2,
+          "character": 3
+        },
+        "end": {
+          "line": 3,
+          "character": 76
+        }
+      },
+      "commands": [
+        "workbench.action.keepEditor"
+      ]
+    },
+    {
+      "title": "10 · 🔒 Controller: unknown report → 404",
+      "description": "**What happens:** a `reportId` that is not a key of the map stops the request:\n\n```http\nHTTP/1.1 404 Not Found\n\n{\"error\":\"unknown report\"}\n```\n(derived from code, not run)\n\n**Next →** `reportService.build(definition)` (step 11).",
+      "file": "src/controllers/reportsController.js",
+      "pattern": "(if \\(!definition\\) return res\\.status\\(404\\)[^\\n]*)",
+      "selection": {
+        "start": {
+          "line": 6,
+          "character": 3
+        },
+        "end": {
+          "line": 6,
+          "character": 77
+        }
+      },
+      "commands": [
+        "workbench.action.keepEditor"
+      ]
+    },
+    {
+      "title": "11 · Service: pass definition.table",
+      "description": "**What happens:** the service passes the configured table name to the repository, where it is called `tableName`.\n\n```js\nsummary('orders_daily_summary')\n```\n\n**Next →** `summary(tableName)` (step 12).",
+      "file": "src/services/reportService.js",
+      "pattern": "(reportRepository\\.summary\\(definition\\.table\\))",
+      "selection": {
+        "start": {
+          "line": 4,
+          "character": 25
+        },
+        "end": {
+          "line": 4,
+          "character": 67
+        }
+      },
+      "commands": [
+        "workbench.action.keepEditor"
+      ]
+    },
+    {
+      "title": "12 · ⚠️ Store: FROM interpolation",
+      "description": "**What happens:** `tableName` is written into the SQL text with a template literal. This is the line Semgrep flagged (`reportRepository.js:8`). There are no bound parameters.\n\n```sql\nSELECT count(*)::int AS orders, coalesce(sum(total), 0) AS revenue FROM orders_daily_summary\n```\n\n**Security:** the value here always comes from `config/reports.js` (steps 8–11), not from the request text; for an inherited key it is `undefined`, giving `FROM undefined`.\n\n**Next →** `pool.query(text)` to Postgres (step 13).",
+      "file": "src/repositories/reportRepository.js",
+      "pattern": "(FROM \\$\\{tableName\\})",
+      "selection": {
+        "start": {
+          "line": 8,
+          "character": 73
+        },
+        "end": {
+          "line": 8,
+          "character": 90
+        }
+      },
+      "commands": [
+        "workbench.action.keepEditor"
+      ]
+    },
+    {
+      "title": "13 · Postgres: aggregate the view",
+      "description": "**What happens:** Postgres counts and sums the rows of the view. With `FROM undefined` it fails with `relation \"undefined\" does not exist`, which rejects the promise.\n\n**Next →** the service merges the result (step 14) or the error handler runs (step 16)."
+    },
+    {
+      "title": "14 · Service: add the title",
+      "description": "**What happens:** combines the configured title with the aggregate row.\n\n**Next →** `res.json(...)` in the controller (step 15).",
+      "file": "src/services/reportService.js",
+      "pattern": "(return \\{ title: definition\\.title, \\.\\.\\.summary \\})",
+      "selection": {
+        "start": {
+          "line": 5,
+          "character": 3
+        },
+        "end": {
+          "line": 5,
+          "character": 49
+        }
+      },
+      "commands": [
+        "workbench.action.keepEditor"
+      ]
+    },
+    {
+      "title": "15 · Response: 200 JSON",
+      "description": "**What happens:** the report is returned as JSON. With the seed data loaded just now, orders 1 (42.50) and 4 (310.00) are in the last 24 hours; `revenue` is a string because `pg` returns `NUMERIC` as text:\n\n```http\nHTTP/1.1 200 OK\nContent-Type: application/json; charset=utf-8\n\n{\"title\":\"Orders in the last 24 hours\",\"orders\":2,\"revenue\":\"352.50\"}\n```\n(derived from code and db/init.sql, not run)",
+      "file": "src/controllers/reportsController.js",
+      "pattern": "(res\\.json\\(await reportService\\.build\\(definition\\)\\))",
+      "selection": {
+        "start": {
+          "line": 8,
+          "character": 3
+        },
+        "end": {
+          "line": 8,
+          "character": 50
+        }
+      },
+      "commands": [
+        "workbench.action.keepEditor"
+      ]
+    },
+    {
+      "title": "16 · Error handler: 500",
+      "description": "**What happens:** Express 5 forwards the rejected promise to the error handler, which logs it and returns a generic body:\n\n```http\nHTTP/1.1 500 Internal Server Error\n\n{\"error\":\"internal error\"}\n```\n(derived from code, not run)",
+      "file": "src/app.js",
+      "pattern": "(res\\.status\\(500\\)\\.json\\(\\{ error: 'internal error' \\}\\))",
+      "selection": {
+        "start": {
+          "line": 18,
+          "character": 3
+        },
+        "end": {
+          "line": 18,
+          "character": 52
+        }
+      },
+      "commands": [
+        "workbench.action.keepEditor"
+      ]
+    }
+  ]
+}

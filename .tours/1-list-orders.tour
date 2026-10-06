@@ -1,0 +1,264 @@
+{
+  "$schema": "https://aka.ms/codetour-schema",
+  "title": "List my orders (GET /orders?status=&sort=)",
+  "description": "How a signed-in customer lists their own orders, filtered by status and sorted by a column, from the request to the SELECT ... ORDER BY statement flagged by Semgrep (src/repositories/orderRepository.js:8).",
+  "isPrimary": true,
+  "nextTour": "Revenue report (GET /reports/:reportId)",
+  "steps": [
+    {
+      "title": "1 · Client: HTTP request",
+      "description": "**What happens:** any user with an API token (role `user` or `admin`) asks for their orders. Both query parameters are optional: `status` filters, `sort` picks the ORDER BY column.\n\n```http\nGET /orders?status=open&sort=total HTTP/1.1\nHost: localhost:3000\nAuthorization: Bearer tok_alice_7d2f9c\n```\n\n| Case | Status | Body | Source |\n|---|---|---|---|\n| No `Authorization` header, or not `Bearer …` | 401 | `{\"error\":\"missing token\"}` | captured |\n| Token not in `users.api_token` | 401 | `{\"error\":\"invalid token\"}` | derived from code, not run |\n| `status` not `open`/`shipped`/`cancelled` | 400 | `{\"error\":\"invalid status\"}` | derived from code, not run |\n| `sort` is not a column Postgres accepts (e.g. `sort=price`) | 500 | `{\"error\":\"internal error\"}` | derived from code, not run |\n| Success | 200 | JSON array of the caller's orders | derived from code, not run |\n\n**Next →** Express matches the path against the mounted routers (step 2)."
+    },
+    {
+      "title": "2 · App: mount orders router",
+      "description": "**What happens:** the app installs the JSON and urlencoded body parsers, then mounts the orders router first. Query strings are parsed by Express 5's default `simple` parser (Node `querystring`): values are strings, a repeated key becomes an array.\n\n```js\nreq.query  // ?status=open&sort=total → { status: 'open', sort: 'total' }\n```\n\n**Next →** `router.get('/orders', ...)` (step 3).",
+      "file": "src/app.js",
+      "pattern": "app\\.use\\((require\\('\\./routes/orders'\\))\\)",
+      "selection": {
+        "start": {
+          "line": 11,
+          "character": 9
+        },
+        "end": {
+          "line": 11,
+          "character": 35
+        }
+      },
+      "commands": [
+        "workbench.action.keepEditor"
+      ]
+    },
+    {
+      "title": "3 · Routing: GET /orders",
+      "description": "**What happens:** the route runs one middleware, `requireAuth`, then the controller. There is no `requireRole`, so every authenticated user reaches the controller.\n\n**Next →** `requireAuth(req, res, next)` (step 4).",
+      "file": "src/routes/orders.js",
+      "pattern": "(router\\.get\\('/orders', requireAuth, ordersController\\.list\\))",
+      "selection": {
+        "start": {
+          "line": 5,
+          "character": 1
+        },
+        "end": {
+          "line": 5,
+          "character": 58
+        }
+      },
+      "commands": [
+        "workbench.action.keepEditor"
+      ]
+    },
+    {
+      "title": "4 · 🔒 Auth: read Bearer token",
+      "description": "**What happens:** takes the token from `Authorization: Bearer <token>`. A missing header or any other scheme stops the request (captured from the running app):\n\n```http\nHTTP/1.1 401 Unauthorized\n\n{\"error\":\"missing token\"}\n```\n\n**Next →** `userService.authenticate(token)` (step 5).",
+      "file": "src/middleware/requireAuth.js",
+      "pattern": "(const token = header\\.startsWith\\('Bearer '\\)[^\\n]*)",
+      "selection": {
+        "start": {
+          "line": 5,
+          "character": 3
+        },
+        "end": {
+          "line": 5,
+          "character": 86
+        }
+      },
+      "commands": [
+        "workbench.action.keepEditor"
+      ]
+    },
+    {
+      "title": "5 · 🔒 Auth: authenticate token",
+      "description": "**What happens:** `userService.authenticate` forwards straight to `userRepository.findByToken`. No matching user stops the request; otherwise the user row is stored on `req.user`.\n\n```http\nHTTP/1.1 401 Unauthorized\n\n{\"error\":\"invalid token\"}\n```\n(derived from code, not run)\n\n**Next →** `findByToken(token)` (step 6).",
+      "file": "src/middleware/requireAuth.js",
+      "pattern": "(const user = await userService\\.authenticate\\(token\\);\\n\\s*if \\(!user\\)[^\\n]*)",
+      "selection": {
+        "start": {
+          "line": 8,
+          "character": 3
+        },
+        "end": {
+          "line": 9,
+          "character": 70
+        }
+      },
+      "commands": [
+        "workbench.action.keepEditor"
+      ]
+    },
+    {
+      "title": "6 · 🔒 Auth store: token lookup",
+      "description": "**What happens:** looks the token up with a parameterised query: the token is sent as the value of `$1`, not as part of the SQL text.\n\n```js\nreq.user = { id: 1, username: 'alice', role: 'user' }   // for tok_alice_7d2f9c\n```\n\n**Next →** `next()` → `ordersController.list(req, res)` (step 7).",
+      "file": "src/repositories/userRepository.js",
+      "pattern": "('SELECT id, username, role FROM users WHERE api_token = \\$1', \\[token\\])",
+      "selection": {
+        "start": {
+          "line": 7,
+          "character": 37
+        },
+        "end": {
+          "line": 7,
+          "character": 105
+        }
+      },
+      "commands": [
+        "workbench.action.keepEditor"
+      ]
+    },
+    {
+      "title": "7 · 🎯 Controller: read status, sort",
+      "description": "**What happens:** both values come straight from the caller's query string.\n\n```js\nstatus = 'open'; sort = 'total'\n```\n\n**Next →** the `status` check (step 8).",
+      "file": "src/controllers/ordersController.js",
+      "pattern": "(const \\{ status, sort \\} = req\\.query)",
+      "selection": {
+        "start": {
+          "line": 6,
+          "character": 3
+        },
+        "end": {
+          "line": 6,
+          "character": 37
+        }
+      },
+      "commands": [
+        "workbench.action.keepEditor"
+      ]
+    },
+    {
+      "title": "8 · 🔒 Controller: validate status",
+      "description": "**What happens:** `status`, when present, must be one of `ALLOWED_STATUSES`. Anything else, including a repeated `status` key (an array), is rejected:\n\n```http\nHTTP/1.1 400 Bad Request\n\n{\"error\":\"invalid status\"}\n```\n(derived from code, not run)\n\n**Security:** there is no equivalent check for `sort`; it is passed on unchanged.\n\n**Next →** `orderService.search({ status, orderColumn: sort }, req.user)` (step 9).",
+      "file": "src/controllers/ordersController.js",
+      "pattern": "(if \\(status && !ALLOWED_STATUSES\\.includes\\(status\\)\\))",
+      "selection": {
+        "start": {
+          "line": 7,
+          "character": 3
+        },
+        "end": {
+          "line": 7,
+          "character": 52
+        }
+      },
+      "commands": [
+        "workbench.action.keepEditor"
+      ]
+    },
+    {
+      "title": "9 · Controller: rename sort",
+      "description": "**What happens:** the query parameter `sort` becomes `filters.orderColumn`; the user id comes from `req.user`, not from the request.\n\n```js\nfilters = { status: 'open', orderColumn: 'total' }; user.id = 1\n```\n\n**Next →** `orderRepository.find(...)` in the service (step 10).",
+      "file": "src/controllers/ordersController.js",
+      "pattern": "(orderService\\.search\\(\\{ status, orderColumn: sort \\}, req\\.user\\))",
+      "selection": {
+        "start": {
+          "line": 11,
+          "character": 24
+        },
+        "end": {
+          "line": 11,
+          "character": 84
+        }
+      },
+      "commands": [
+        "workbench.action.keepEditor"
+      ]
+    },
+    {
+      "title": "10 · Service: default sort column",
+      "description": "**What happens:** no business logic: when `sort` was omitted, the column defaults to `created_at`. The value is the third argument, named `orderBy` in the repository.\n\n```js\nfind(1, 'open', 'total')        // ?status=open&sort=total\nfind(1, undefined, 'created_at') // no query parameters\n```\n\n**Next →** `find(userId, status, orderBy)` (step 11).",
+      "file": "src/services/orderService.js",
+      "pattern": "(orderRepository\\.find\\(user\\.id, filters\\.status, filters\\.orderColumn \\|\\| 'created_at'\\))",
+      "selection": {
+        "start": {
+          "line": 4,
+          "character": 3
+        },
+        "end": {
+          "line": 4,
+          "character": 85
+        }
+      },
+      "commands": [
+        "workbench.action.keepEditor"
+      ]
+    },
+    {
+      "title": "11 · ⚠️ Store: ORDER BY interpolation",
+      "description": "**What happens:** `orderBy` is written into the SQL text with a template literal. This is the line Semgrep flagged (`orderRepository.js:8`, statement starts there).\n\n```sql\nSELECT id, total, status, created_at FROM orders\n WHERE user_id = $1 AND ($2::text IS NULL OR status = $2)\n ORDER BY total\n```\n\n**Security:** the text after `ORDER BY` is whatever `sort` contained; a repeated `sort` key becomes an array and is joined with commas (`?sort=a&sort=b` → `ORDER BY a,b`).\n\n**Next →** the parameter values sent with it (step 12).",
+      "file": "src/repositories/orderRepository.js",
+      "pattern": "(ORDER BY \\$\\{orderBy\\})",
+      "selection": {
+        "start": {
+          "line": 10,
+          "character": 6
+        },
+        "end": {
+          "line": 10,
+          "character": 25
+        }
+      },
+      "commands": [
+        "workbench.action.keepEditor"
+      ]
+    },
+    {
+      "title": "12 · 🔒 Store: bound parameters",
+      "description": "**What happens:** `userId` and `status` are sent as bound parameters `$1` and `$2`. Only `orderBy` is part of the SQL text.\n\n```js\n[1, 'open']\n```\n\n**Next →** `pool.query(text, values)` to Postgres (step 13).",
+      "file": "src/repositories/orderRepository.js",
+      "pattern": "(\\[userId, status \\|\\| null\\])",
+      "selection": {
+        "start": {
+          "line": 11,
+          "character": 5
+        },
+        "end": {
+          "line": 11,
+          "character": 29
+        }
+      },
+      "commands": [
+        "workbench.action.keepEditor"
+      ]
+    },
+    {
+      "title": "13 · Postgres: run the SELECT",
+      "description": "**What happens:** Postgres parses the statement (including the `ORDER BY` text) and runs it with the bound values. An unknown column name is a parse error, e.g. `column \"price\" does not exist`, which rejects the `pool.query` promise.\n\n**Next →** rows back to the controller (step 14) or the error handler (step 15)."
+    },
+    {
+      "title": "14 · Response: 200 JSON",
+      "description": "**What happens:** the rows are returned as JSON. `pg` returns `NUMERIC` as strings. For alice with no query parameters (sorted by `created_at`, oldest first):\n\n```http\nHTTP/1.1 200 OK\nContent-Type: application/json; charset=utf-8\n\n[{\"id\":3,\"total\":\"15.99\",\"status\":\"cancelled\",\"created_at\":\"…\"},\n {\"id\":2,\"total\":\"120.00\",\"status\":\"shipped\",\"created_at\":\"…\"},\n {\"id\":1,\"total\":\"42.50\",\"status\":\"open\",\"created_at\":\"…\"}]\n```\n(derived from code and db/init.sql, not run)",
+      "file": "src/controllers/ordersController.js",
+      "pattern": "(res\\.json\\(orders\\))",
+      "selection": {
+        "start": {
+          "line": 12,
+          "character": 3
+        },
+        "end": {
+          "line": 12,
+          "character": 19
+        }
+      },
+      "commands": [
+        "workbench.action.keepEditor"
+      ]
+    },
+    {
+      "title": "15 · Error handler: 500",
+      "description": "**What happens:** Express 5 forwards the rejected promise from the async controller to the error handler, which logs the full error on the server and returns a generic body (the database message is not sent to the client):\n\n```http\nHTTP/1.1 500 Internal Server Error\n\n{\"error\":\"internal error\"}\n```\n(derived from code, not run)",
+      "file": "src/app.js",
+      "pattern": "(res\\.status\\(500\\)\\.json\\(\\{ error: 'internal error' \\}\\))",
+      "selection": {
+        "start": {
+          "line": 18,
+          "character": 3
+        },
+        "end": {
+          "line": 18,
+          "character": 52
+        }
+      },
+      "commands": [
+        "workbench.action.keepEditor"
+      ]
+    }
+  ]
+}

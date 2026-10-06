@@ -1,0 +1,340 @@
+{
+  "id": "list-orders",
+  "order": 1,
+  "next": "show-report",
+  "title": "List my orders (GET /orders?status=&sort=)",
+  "description": "How a signed-in customer lists their own orders, filtered by status and sorted by a column, from the request to the SELECT ... ORDER BY statement flagged by Semgrep (src/repositories/orderRepository.js:8).",
+  "actor": { "id": "C", "name": "Customer\nAPI client (Bearer token)" },
+  "lanes": [
+    { "id": "E", "name": "Express" },
+    { "id": "AU", "name": "Auth" },
+    { "id": "O", "name": "Controller" },
+    { "id": "S", "name": "Service" },
+    { "id": "P", "name": "Store" },
+    { "id": "D", "name": "Postgres" }
+  ],
+  "steps": [
+    {
+      "n": 1,
+      "title": "Client: HTTP request",
+      "description": [
+        "**What happens:** any user with an API token (role `user` or `admin`) asks for their orders. Both query parameters are optional: `status` filters, `sort` picks the ORDER BY column.",
+        "",
+        "```http",
+        "GET /orders?status=open&sort=total HTTP/1.1",
+        "Host: localhost:3000",
+        "Authorization: Bearer tok_alice_7d2f9c",
+        "```",
+        "",
+        "| Case | Status | Body | Source |",
+        "|---|---|---|---|",
+        "| No `Authorization` header, or not `Bearer …` | 401 | `{\"error\":\"missing token\"}` | captured |",
+        "| Token not in `users.api_token` | 401 | `{\"error\":\"invalid token\"}` | derived from code, not run |",
+        "| `status` not `open`/`shipped`/`cancelled` | 400 | `{\"error\":\"invalid status\"}` | derived from code, not run |",
+        "| `sort` is not a column Postgres accepts (e.g. `sort=price`) | 500 | `{\"error\":\"internal error\"}` | derived from code, not run |",
+        "| Success | 200 | JSON array of the caller's orders | derived from code, not run |",
+        "",
+        "**Next →** Express matches the path against the mounted routers (step 2)."
+      ]
+    },
+    {
+      "n": 2,
+      "title": "App: mount orders router",
+      "lane": "E",
+      "file": "src/app.js",
+      "pattern": "app\\.use\\((require\\('\\./routes/orders'\\))\\)",
+      "note": ["express.json / urlencoded first", "then routes/orders"],
+      "description": [
+        "**What happens:** the app installs the JSON and urlencoded body parsers, then mounts the orders router first. Query strings are parsed by Express 5's default `simple` parser (Node `querystring`): values are strings, a repeated key becomes an array.",
+        "",
+        "```js",
+        "req.query  // ?status=open&sort=total → { status: 'open', sort: 'total' }",
+        "```",
+        "",
+        "**Next →** `router.get('/orders', ...)` (step 3)."
+      ]
+    },
+    {
+      "n": 3,
+      "title": "Routing: GET /orders",
+      "lane": "E",
+      "file": "src/routes/orders.js",
+      "pattern": "(router\\.get\\('/orders', requireAuth, ordersController\\.list\\))",
+      "note": ["requireAuth → ordersController.list", "no role check"],
+      "description": [
+        "**What happens:** the route runs one middleware, `requireAuth`, then the controller. There is no `requireRole`, so every authenticated user reaches the controller.",
+        "",
+        "**Next →** `requireAuth(req, res, next)` (step 4)."
+      ]
+    },
+    {
+      "n": 4,
+      "title": "Auth: read Bearer token",
+      "lane": "AU",
+      "kind": "control",
+      "file": "src/middleware/requireAuth.js",
+      "pattern": "(const token = header\\.startsWith\\('Bearer '\\)[^\\n]*)",
+      "note": ["Authorization: Bearer <token>", "missing → 401"],
+      "description": [
+        "**What happens:** takes the token from `Authorization: Bearer <token>`. A missing header or any other scheme stops the request (captured from the running app):",
+        "",
+        "```http",
+        "HTTP/1.1 401 Unauthorized",
+        "",
+        "{\"error\":\"missing token\"}",
+        "```",
+        "",
+        "**Next →** `userService.authenticate(token)` (step 5)."
+      ]
+    },
+    {
+      "n": 5,
+      "title": "Auth: authenticate token",
+      "lane": "AU",
+      "kind": "control",
+      "file": "src/middleware/requireAuth.js",
+      "pattern": "(const user = await userService\\.authenticate\\(token\\);\\n\\s*if \\(!user\\)[^\\n]*)",
+      "note": ["unknown token → 401", "req.user = { id, username, role }"],
+      "description": [
+        "**What happens:** `userService.authenticate` forwards straight to `userRepository.findByToken`. No matching user stops the request; otherwise the user row is stored on `req.user`.",
+        "",
+        "```http",
+        "HTTP/1.1 401 Unauthorized",
+        "",
+        "{\"error\":\"invalid token\"}",
+        "```",
+        "(derived from code, not run)",
+        "",
+        "**Next →** `findByToken(token)` (step 6)."
+      ]
+    },
+    {
+      "n": 6,
+      "title": "Auth store: token lookup",
+      "lane": "AU",
+      "kind": "control",
+      "file": "src/repositories/userRepository.js",
+      "pattern": "('SELECT id, username, role FROM users WHERE api_token = \\$1', \\[token\\])",
+      "note": ["WHERE api_token = $1", "token bound as a parameter"],
+      "description": [
+        "**What happens:** looks the token up with a parameterised query: the token is sent as the value of `$1`, not as part of the SQL text.",
+        "",
+        "```js",
+        "req.user = { id: 1, username: 'alice', role: 'user' }   // for tok_alice_7d2f9c",
+        "```",
+        "",
+        "**Next →** `next()` → `ordersController.list(req, res)` (step 7)."
+      ]
+    },
+    {
+      "n": 7,
+      "title": "Controller: read status, sort",
+      "lane": "O",
+      "kind": "source",
+      "file": "src/controllers/ordersController.js",
+      "pattern": "(const \\{ status, sort \\} = req\\.query)",
+      "note": ["status, sort from the query string"],
+      "description": [
+        "**What happens:** both values come straight from the caller's query string.",
+        "",
+        "```js",
+        "status = 'open'; sort = 'total'",
+        "```",
+        "",
+        "**Next →** the `status` check (step 8)."
+      ]
+    },
+    {
+      "n": 8,
+      "title": "Controller: validate status",
+      "lane": "O",
+      "kind": "control",
+      "file": "src/controllers/ordersController.js",
+      "pattern": "(if \\(status && !ALLOWED_STATUSES\\.includes\\(status\\)\\))",
+      "note": ["status ∈ open|shipped|cancelled", "sort is not checked"],
+      "description": [
+        "**What happens:** `status`, when present, must be one of `ALLOWED_STATUSES`. Anything else, including a repeated `status` key (an array), is rejected:",
+        "",
+        "```http",
+        "HTTP/1.1 400 Bad Request",
+        "",
+        "{\"error\":\"invalid status\"}",
+        "```",
+        "(derived from code, not run)",
+        "",
+        "**Security:** there is no equivalent check for `sort`; it is passed on unchanged.",
+        "",
+        "**Next →** `orderService.search({ status, orderColumn: sort }, req.user)` (step 9)."
+      ]
+    },
+    {
+      "n": 9,
+      "title": "Controller: rename sort",
+      "lane": "O",
+      "file": "src/controllers/ordersController.js",
+      "pattern": "(orderService\\.search\\(\\{ status, orderColumn: sort \\}, req\\.user\\))",
+      "note": ["sort is renamed orderColumn"],
+      "description": [
+        "**What happens:** the query parameter `sort` becomes `filters.orderColumn`; the user id comes from `req.user`, not from the request.",
+        "",
+        "```js",
+        "filters = { status: 'open', orderColumn: 'total' }; user.id = 1",
+        "```",
+        "",
+        "**Next →** `orderRepository.find(...)` in the service (step 10)."
+      ]
+    },
+    {
+      "n": 10,
+      "title": "Service: default sort column",
+      "lane": "S",
+      "file": "src/services/orderService.js",
+      "pattern": "(orderRepository\\.find\\(user\\.id, filters\\.status, filters\\.orderColumn \\|\\| 'created_at'\\))",
+      "note": ["orderColumn || 'created_at'", "orderColumn is renamed orderBy"],
+      "description": [
+        "**What happens:** no business logic: when `sort` was omitted, the column defaults to `created_at`. The value is the third argument, named `orderBy` in the repository.",
+        "",
+        "```js",
+        "find(1, 'open', 'total')        // ?status=open&sort=total",
+        "find(1, undefined, 'created_at') // no query parameters",
+        "```",
+        "",
+        "**Next →** `find(userId, status, orderBy)` (step 11)."
+      ]
+    },
+    {
+      "n": 11,
+      "title": "Store: ORDER BY interpolation",
+      "lane": "P",
+      "kind": "sink",
+      "file": "src/repositories/orderRepository.js",
+      "pattern": "(ORDER BY \\$\\{orderBy\\})",
+      "note": ["ORDER BY ${orderBy}", "Semgrep: node-postgres-sqli"],
+      "description": [
+        "**What happens:** `orderBy` is written into the SQL text with a template literal. This is the line Semgrep flagged (`orderRepository.js:8`, statement starts there).",
+        "",
+        "```sql",
+        "SELECT id, total, status, created_at FROM orders",
+        " WHERE user_id = $1 AND ($2::text IS NULL OR status = $2)",
+        " ORDER BY total",
+        "```",
+        "",
+        "**Security:** the text after `ORDER BY` is whatever `sort` contained; a repeated `sort` key becomes an array and is joined with commas (`?sort=a&sort=b` → `ORDER BY a,b`).",
+        "",
+        "**Next →** the parameter values sent with it (step 12)."
+      ]
+    },
+    {
+      "n": 12,
+      "title": "Store: bound parameters",
+      "lane": "P",
+      "kind": "control",
+      "file": "src/repositories/orderRepository.js",
+      "pattern": "(\\[userId, status \\|\\| null\\])",
+      "note": ["$1 = userId, $2 = status", "bound, not in SQL text"],
+      "description": [
+        "**What happens:** `userId` and `status` are sent as bound parameters `$1` and `$2`. Only `orderBy` is part of the SQL text.",
+        "",
+        "```js",
+        "[1, 'open']",
+        "```",
+        "",
+        "**Next →** `pool.query(text, values)` to Postgres (step 13)."
+      ]
+    },
+    {
+      "n": 13,
+      "title": "Postgres: run the SELECT",
+      "description": [
+        "**What happens:** Postgres parses the statement (including the `ORDER BY` text) and runs it with the bound values. An unknown column name is a parse error, e.g. `column \"price\" does not exist`, which rejects the `pool.query` promise.",
+        "",
+        "**Next →** rows back to the controller (step 14) or the error handler (step 15)."
+      ]
+    },
+    {
+      "n": 14,
+      "title": "Response: 200 JSON",
+      "lane": "O",
+      "file": "src/controllers/ordersController.js",
+      "pattern": "(res\\.json\\(orders\\))",
+      "note": ["res.json(orders)"],
+      "description": [
+        "**What happens:** the rows are returned as JSON. `pg` returns `NUMERIC` as strings. For alice with no query parameters (sorted by `created_at`, oldest first):",
+        "",
+        "```http",
+        "HTTP/1.1 200 OK",
+        "Content-Type: application/json; charset=utf-8",
+        "",
+        "[{\"id\":3,\"total\":\"15.99\",\"status\":\"cancelled\",\"created_at\":\"…\"},",
+        " {\"id\":2,\"total\":\"120.00\",\"status\":\"shipped\",\"created_at\":\"…\"},",
+        " {\"id\":1,\"total\":\"42.50\",\"status\":\"open\",\"created_at\":\"…\"}]",
+        "```",
+        "(derived from code and db/init.sql, not run)"
+      ]
+    },
+    {
+      "n": 15,
+      "title": "Error handler: 500",
+      "lane": "E",
+      "file": "src/app.js",
+      "pattern": "(res\\.status\\(500\\)\\.json\\(\\{ error: 'internal error' \\}\\))",
+      "note": ["console.error(err)", "500 internal error"],
+      "description": [
+        "**What happens:** Express 5 forwards the rejected promise from the async controller to the error handler, which logs the full error on the server and returns a generic body (the database message is not sent to the client):",
+        "",
+        "```http",
+        "HTTP/1.1 500 Internal Server Error",
+        "",
+        "{\"error\":\"internal error\"}",
+        "```",
+        "(derived from code, not run)"
+      ]
+    }
+  ],
+  "diagram": [
+    { "phase": "Routing", "events": [
+      { "call": ["C", "E"], "step": 1, "text": "GET /orders?status=open&sort=total\nAuthorization: Bearer tok_…" },
+      { "step": 2 },
+      { "call": ["E", "E"], "text": "routes/orders.js" },
+      { "step": 3 },
+      { "call": ["E", "AU"], "text": "requireAuth(req, res, next)" }
+    ] },
+    { "phase": "Authentication", "events": [
+      { "step": 4 },
+      { "break": "no Bearer token", "events": [ { "return": ["AU", "C"], "text": "401 {\"error\":\"missing token\"}" } ] },
+      { "step": 5 },
+      { "call": ["AU", "AU"], "text": "userService.authenticate → findByToken(token)" },
+      { "step": 6 },
+      { "break": "token not found", "events": [ { "return": ["AU", "C"], "text": "401 {\"error\":\"invalid token\"}" } ] }
+    ] },
+    { "phase": "Input handling", "events": [
+      { "call": ["AU", "O"], "text": "next() → ordersController.list(req, res)" },
+      { "step": 7 },
+      { "step": 8 },
+      { "break": "status not allowed", "events": [ { "return": ["O", "C"], "text": "400 {\"error\":\"invalid status\"}" } ] },
+      { "call": ["O", "S"], "step": 9, "text": "search({ status, orderColumn: sort }, req.user)" },
+      { "note": "sort is renamed orderColumn", "over": ["O", "S"] }
+    ] },
+    { "phase": "Data access", "events": [
+      { "call": ["S", "P"], "step": 10, "text": "find(user.id, status, orderColumn || 'created_at')" },
+      { "note": "orderColumn is renamed orderBy", "over": ["S", "P"] },
+      { "step": 11 },
+      { "step": 12 },
+      { "call": ["P", "D"], "step": 13, "text": "pool.query(SELECT … ORDER BY total, [1, 'open'])" }
+    ] },
+    { "phase": "Response", "events": [
+      { "alt": [
+        { "label": "rows", "events": [
+          { "return": ["D", "P"], "text": "rows" },
+          { "return": ["P", "O"], "text": "orders" },
+          { "return": ["O", "C"], "step": 14, "text": "200 [{id, total, status, created_at}, …]" }
+        ] },
+        { "label": "SQL error (e.g. unknown column)", "events": [
+          { "return": ["D", "P"], "text": "error: column \"price\" does not exist" },
+          { "return": ["P", "E"], "text": "rejected promise → error handler" },
+          { "return": ["E", "C"], "step": 15, "text": "500 {\"error\":\"internal error\"}" }
+        ] }
+      ] }
+    ] }
+  ]
+}
