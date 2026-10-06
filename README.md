@@ -1,21 +1,117 @@
-# AI SAST triage demo
+# Use AI to Get Smarter, Not Lazier — demo repo
 
-The demo app from the AppSec Untangled video **Use AI to Get Smarter, Not Lazier**.
+<table>
+<tr>
+<td width="100%">
 
-A small Express + PostgreSQL order tracker with a Semgrep scan that reports 4 findings. Some are real
-and some are not. Two of them are SQL injection findings that look the same, but only one can be
-exploited. You find out which by following the data, not by reading the flagged line.
+<a href="https://youtu.be/z_A_UVAFx0M">
+  <img src="https://img.youtube.com/vi/z_A_UVAFx0M/hqdefault.jpg" align="right" width="240" alt="Watch the video">
+</a>
 
-Use it to practise triaging SAST findings with AI in a way that leaves you understanding the code:
-understand the feature, trace the data, decide with evidence, and prove the control works.
+### 🎥 This demo is explained in detail on my YouTube channel <img src="assets/AppSec_Untangled_Logo.jpg" width="30"> [AppSec Untangled](https://www.youtube.com/@AppSecUntangled)
+
+The same Semgrep triage done twice: a one-line "just triage it" prompt vs. using AI to understand
+the code, trace the data, decide with evidence and prove the control works.
+
+[![Watch on YouTube](https://img.shields.io/badge/▶_Watch_the_video-FF0000?style=for-the-badge&logo=youtube&logoColor=white)](https://youtu.be/z_A_UVAFx0M)
+
+📝 Blog post: BLOG_URL
+
+</td>
+</tr>
+</table>
+
+**This repo was built for that video and blog post.** It's a small, deliberately vulnerable
+Express + PostgreSQL order tracker, plus the Semgrep findings and every artifact the AI produced in
+the demo. It isn't a product or a library. It exists so you can follow along, check the outputs,
+and try the workflow yourself.
 
 > ⚠️ **This app is deliberately vulnerable.** Run it locally only. Don't deploy it or expose it to a
 > network. The tokens and passwords in `.env.example` and `db/init.sql` are fake demo values.
 
-- 🎥 Video: https://youtu.be/VIDEO_ID
-- 📝 Blog post: BLOG_URL
-- 🧰 Skills used in the demo: [`appsec-skills`](https://github.com/mohamed-osama-aboelkheir/appsec-untangled-resources/tree/main/plugins/appsec-skills/skills)
-  (`code-walkthrough`, `source-to-sink`, `semgrep-triage`, `security-experiment`)
+**The idea:** AI makes the shortcut from "task" to "done" shorter than ever, but "do it for me" skips
+the part where you learn, and that builds cognitive debt. The demo uses AI to balance **doing** and
+**understanding**. Two SQL injection findings below look the same. Only one is exploitable, and you
+find out which by following the data, not by reading the flagged line.
+
+🧰 Skills used in the demo: [`appsec-skills`](https://github.com/mohamed-osama-aboelkheir/appsec-untangled-resources/tree/main/plugins/appsec-skills/skills)
+(`code-walkthrough`, `source-to-sink`, `semgrep-triage`, `security-experiment`)
+
+## The Semgrep scan from the video
+
+This is the terminal output of the `semgrep scan` run at the start of the video, trimmed to the
+findings ([full output](semgrep-scan-output.txt)):
+
+```text
+$ semgrep scan
+...
+┌─────────────────┐
+│ 5 Code Findings │
+└─────────────────┘
+
+    src/app.js
+     ❱ javascript.express.security.audit.express-check-csurf-middleware-usage.express-check-csurf-middleware-usage
+          ❰❰ Blocking ❱❱
+          A CSRF middleware was not detected in your express application. Ensure you are either using one such
+          as `csurf` or `csrf` (see rule references) and/or you are properly doing CSRF validation in your
+          routes with a token or cookies.
+          Details: https://sg.run/BxzR
+
+            5┆ const app = express();
+
+    src/repositories/orderRepository.js
+    ❯❱ javascript.lang.security.audit.sqli.node-postgres-sqli.node-postgres-sqli
+          ❰❰ Blocking ❱❱
+          Detected string concatenation with a non-literal variable in a node-postgres JS SQL statement. This
+          could lead to SQL injection if the variable is user-controlled and not properly sanitized. In order
+          to prevent SQL injection, use parameterized queries or prepared statements instead. You can use
+          parameterized statements like so: `client.query('SELECT $1 from table', [userinput])`
+          Details: https://sg.run/0n3v
+
+            8┆ `SELECT id, total, status, created_at FROM orders
+            9┆  WHERE user_id = $1 AND ($2::text IS NULL OR status = $2)
+           10┆  ORDER BY ${orderBy}`,
+
+    src/repositories/reportRepository.js
+    ❯❱ javascript.lang.security.audit.sqli.node-postgres-sqli.node-postgres-sqli
+          ❰❰ Blocking ❱❱
+          Detected string concatenation with a non-literal variable in a node-postgres JS SQL statement. This
+          could lead to SQL injection if the variable is user-controlled and not properly sanitized. In order
+          to prevent SQL injection, use parameterized queries or prepared statements instead. You can use
+          parameterized statements like so: `client.query('SELECT $1 from table', [userinput])`
+          Details: https://sg.run/0n3v
+
+            8┆ `SELECT count(*)::int AS orders, coalesce(sum(total), 0) AS revenue FROM ${tableName}`
+
+    src/services/exportService.js
+    ❯❱ javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
+          ❰❰ Blocking ❱❱
+          Detected possible user input going into a `path.join` or `path.resolve` function. This could
+          possibly lead to a path traversal vulnerability,  where the attacker can access arbitrary files
+          stored in the file system. Instead, be sure to sanitize or validate user input first.
+          Details: https://sg.run/OPqk
+
+            4┆ exports.getPath = (file) => path.join(config.exportDir, file);
+
+    src/views/comments.ejs
+    ❯❱ javascript.express.security.audit.xss.ejs.explicit-unescape.template-explicit-unescape
+          ❰❰ Blocking ❱❱
+          Detected an explicit unescape in an EJS template, using '<%- ... %>' If external data can reach
+          these locations, your application is exposed to a cross-site scripting (XSS) vulnerability. Use '<%=
+          ... %>' to escape this data. If you need escaping, ensure no external data can reach this location.
+          Details: https://sg.run/dKXQ
+
+           18┆ <div><%- comment.html %></div>
+
+
+
+...
+Ran 240 rules on 43 files: 5 findings.
+```
+
+`semgrep.json` holds the same scan in JSON, made with `npm run scan` (Semgrep 1.177.0, `p/default`,
+WARNING and ERROR only, `src/` only). It has 4 findings: that run leaves out the CSRF audit rule,
+which doesn't apply here anyway, because the app authenticates with Bearer tokens, not cookies.
 
 ## Branches
 
@@ -59,12 +155,9 @@ Seeded API tokens (send as `Authorization: Bearer <token>`):
 ## Static analysis
 
 ```sh
-npm run scan         # Semgrep p/default, WARNING and ERROR, writes semgrep.json
+npm run scan         # writes semgrep.json
+semgrep scan         # the terminal view shown in the video
 ```
-
-`semgrep.json` is committed, so you can start triaging without installing Semgrep. It has 4
-findings. The video runs a plain `semgrep scan` instead, which also reports the missing-CSRF-middleware
-audit rule on `src/app.js`, so it shows 5. That one doesn't apply here: the app authenticates with Bearer tokens, not cookies.
 
 ## Try it with Claude Code
 
