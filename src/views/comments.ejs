@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Customer comments</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 40rem; margin: 2rem auto; padding: 0 1rem; }
+    li { margin-bottom: 1.25rem; }
+    .meta { color: #666; font-size: 0.85rem; }
+  </style>
+</head>
+<body>
+  <h1>Customer comments</h1>
+  <ul>
+  <% comments.forEach(function (comment) { %>
+    <li>
+      <div class="meta"><%= comment.author %> · <%= comment.createdAt.toISOString().slice(0, 10) %></div>
+      <div><%- comment.html %></div>
+    </li>
+  <% }) %>
+  </ul>
+</body>
+</html>

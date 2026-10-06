@@ -1,0 +1,5 @@
+:include .gitignore
+
+# Project tooling, not application code
+scripts/
+.tours/

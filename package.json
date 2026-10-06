@@ -1,0 +1,25 @@
+{
+  "name": "ai-sast-triage-demo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Deliberately vulnerable order tracker for practising AI-assisted SAST triage",
+  "main": "src/app.js",
+  "scripts": {
+    "db:up": "docker compose up -d db",
+    "db:reset": "docker compose down -v && docker compose up -d db",
+    "start": "node --env-file=.env src/app.js",
+    "scan": "sh scripts/scan.sh",
+    "tours": "node scripts/refresh-tours.mjs",
+    "tours:check": "node scripts/refresh-tours.mjs --check"
+  },
+  "engines": {
+    "node": ">=20.6"
+  },
+  "dependencies": {
+    "ejs": "^3.1.10",
+    "express": "^5.1.0",
+    "isomorphic-dompurify": "^2.26.0",
+    "marked": "^16.0.0",
+    "pg": "^8.16.0"
+  }
+}

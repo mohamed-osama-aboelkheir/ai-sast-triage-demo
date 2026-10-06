@@ -1,0 +1,4 @@
+order_id,total,status
+1,42.50,open
+2,120.00,shipped
+3,15.99,cancelled
