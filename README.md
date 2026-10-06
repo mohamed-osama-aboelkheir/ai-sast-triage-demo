@@ -62,7 +62,9 @@ Seeded API tokens (send as `Authorization: Bearer <token>`):
 npm run scan         # Semgrep p/default, WARNING and ERROR, writes semgrep.json
 ```
 
-`semgrep.json` is committed, so you can start triaging without installing Semgrep.
+`semgrep.json` is committed, so you can start triaging without installing Semgrep. It has 4
+findings. The video runs a plain `semgrep scan` instead, which also reports the missing-CSRF-middleware
+audit rule on `src/app.js`, so it shows 5. That one doesn't apply here: the app authenticates with Bearer tokens, not cookies.
 
 ## Try it with Claude Code
 
